@@ -17,6 +17,7 @@ from src.backtest import (
 from src.config import ProjectConfig
 from src.data_loader import DataFetchError, load_price_data
 from src.features import FeatureCalculationError
+from src.kalman_pairs import KalmanPairError, run_kalman_pair_backtest
 from src.stability import (
     StabilityAnalysisError,
     compare_stability_with_performance,
@@ -256,6 +257,8 @@ def run_full_pipeline(
         If the OOS history is too short or invalid for rolling stability tests.
     SimulationError
         If the pre-split history cannot support Phase 5 bootstrap simulation.
+    KalmanPairError
+        If the dynamic hedge estimator or OOS benchmark cannot be computed.
     OSError
         If cache or diagnostic plot files cannot be written.
 
@@ -275,6 +278,9 @@ def run_full_pipeline(
     return blocks, then evaluates the frozen strategy over synthetic paths.
     Its horizon matches the observed OOS session count; the seeded run logs
     summary statistics but does not use OOS outcomes for model selection.
+    Phase 6 runs an online Kalman hedge benchmark using the static strategy's
+    In-Sample-selected z-score parameters, with fixed non-optimized filter
+    noise values and a causal one-session signal lag.
     """
     if start_date > as_of:
         raise ValueError("start_date must be on or before as_of")
@@ -407,6 +413,30 @@ def run_full_pipeline(
         simulation_report.percentile_95,
         simulation_report.profitable_fraction * 100.0,
     )
+
+    kalman_report = run_kalman_pair_backtest(
+        prices=prices,
+        static_report=report,
+        tickers=(config.ticker_a, config.ticker_b),
+        process_noise=1e-5,
+        observation_variance=1.0,
+    )
+    static_equity = report.out_of_sample_daily_pnl.cumsum()
+    static_drawdown = static_equity - static_equity.cummax().clip(lower=0.0)
+    static_max_drawdown = float(static_drawdown.min())
+    logger.info(
+        "Phase 6 OOS comparison (same IS-selected entry/window): "
+        "static_OLS[pnl=%.4f trades=%d win_rate=%.2f%% max_drawdown=%.4f] "
+        "dynamic_Kalman[pnl=%.4f trades=%d win_rate=%.2f%% max_drawdown=%.4f]",
+        report.out_of_sample.pnl,
+        report.out_of_sample.trade_count,
+        report.out_of_sample.win_rate * 100.0,
+        static_max_drawdown,
+        kalman_report.performance.pnl,
+        kalman_report.performance.trade_count,
+        kalman_report.performance.win_rate * 100.0,
+        kalman_report.performance.max_drawdown,
+    )
     return report
 
 
@@ -421,7 +451,7 @@ def main() -> None:
     Returns
     -------
     None
-        Logs completion after saving diagnostics and reporting Phases 2–5.
+    Logs completion after saving diagnostics and reporting Phases 2–6.
 
     Raises
     ------
@@ -434,8 +464,8 @@ def main() -> None:
     D-1 information cutoff. Configuration defaults provide the pair, start
     date, and split; command-line options allow reproducible date overrides.
     Pipeline failures are logged and surfaced as ``SystemExit`` with the
-    original data, backtest, feature, stability, simulation, or I/O error
-    preserved as the exception cause.
+    original data, backtest, feature, stability, simulation, Kalman, or I/O
+    error preserved as the exception cause.
     """
     config = ProjectConfig()
     parser = argparse.ArgumentParser(description="Warm up and backtest the INTC/AMD pair.")
@@ -503,6 +533,7 @@ def main() -> None:
         FeatureCalculationError,
         StabilityAnalysisError,
         SimulationError,
+        KalmanPairError,
         OSError,
         ValueError,
     ) as error:

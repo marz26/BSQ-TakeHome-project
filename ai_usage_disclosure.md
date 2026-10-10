@@ -9,8 +9,8 @@ GitHub Copilot, acting as the AI programming assistant in VS Code, contributed s
 ## Division of Responsibilities
 
 1. **AI assistance (GitHub Copilot):**
-   - Drafted and iteratively revised implementation across the core modules (`src/data_loader.py`, `src/features.py`, `src/backtest.py`, `src/stability.py`, `src/short_interest.py`, `src/simulation.py`, and `main.py`).
-   - Drafted and revised automated tests for data loading, features, backtesting, stability, short interest, simulation, and pipeline integration.
+   - Drafted and iteratively revised implementation across the core modules (`src/data_loader.py`, `src/features.py`, `src/backtest.py`, `src/stability.py`, `src/short_interest.py`, `src/simulation.py`, `src/kalman_pairs.py`, and `main.py`).
+   - Drafted and revised automated tests for data loading, features, backtesting, stability, short interest, simulation, Kalman filtering, and pipeline integration.
    - Assisted with project documentation, including the README, executive write-up, and this disclosure.
 
 2. **Human author direction and review:**
@@ -25,3 +25,4 @@ The implementation was revised through iterative human direction and AI-assisted
 - **Nasdaq API investigation (Phase 4):** An initial attempt did not find/parse the historical short-interest table for INTC. The human author pointed out that Phase 4 data should be retried and asked for another investigation. In response, the AI assistant revisited the endpoint payload and parsing logic, updated the field/date handling and request headers, and added offline parser/request tests. The later Nasdaq integration remains best-effort and subject to vendor availability; the 14-day lag is an analytical proxy, not a verified publication timestamp.
 - **Sensitivity classification:** During review, an inconsistency was identified between the documented “inconclusive” interpretation of a non-profitable In-Sample baseline and the code flag. The AI assistant changed the implementation so that such a baseline is not marked as parameter-fragile and added a regression test.
 - **Conservative interpretation:** The human author requested rigorous, transparent interpretation. The AI assistant revised the write-up to describe ADF and bootstrap outputs as conditional/descriptive results, not proof of a structural break, calibrated predictive probabilities, or evidence of a robust trading edge.
+- **Dynamic hedge extension (Phase 6):** At the human author's request, the AI assistant implemented a NumPy-only two-state Kalman filter, added causal-prefix and numerical validation tests, integrated an OOS comparison using the static model's In-Sample-selected strategy parameters, and documented the fixed, unoptimized noise settings and run-specific results.

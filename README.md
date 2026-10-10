@@ -194,6 +194,64 @@ campione, non stabilisce la stazionarietà e non tiene conto di costi,
 slippage, vincoli di esecuzione o rischio di selezione dei parametri. Il PnL
 resta espresso in unità di prezzo dello spread, non in rendimento sul capitale.
 
+## Fase 6 (estensione opzionale): hedge ratio dinamico con Kalman
+
+`src/kalman_pairs.py` implementa da zero con NumPy un filtro lineare
+bidimensionale per lo stato `theta_t = [alpha_t, beta_t]`, con transizione
+random walk e osservazione `INTC_t = alpha_t + beta_t * AMD_t + v_t`. Non
+richiede librerie Kalman esterne. A ogni data calcola prima l'innovazione
+one-step-ahead usando lo stato predetto, poi aggiorna lo stato con
+l'osservazione di quella data; quindi nessuna osservazione futura influenza
+stati o innovazioni passati.
+
+Il benchmark OOS riusa, senza riottimizzarli, entry threshold, soglia d'uscita
+e finestra z-score selezionati dal backtest statico In-Sample. L'innovazione
+viene standardizzata con una finestra trailing che include solo osservazioni
+disponibili a quella data; il segnale viene ritardato di una sessione. Per
+calcolare il PnL di ciascun movimento si usa il beta filtrato disponibile
+prima di quel movimento. Le impostazioni Kalman del run sono fisse:
+`Q = 1e-5 * I`, `R = 1.0` (in unità di prezzo al quadrato), stato iniziale
+`[0, 1]` e covarianza iniziale `1e6 * I`. Non sono state calibrate o
+ottimizzate sull'OOS. In particolare, lo stesso valore diagonale di Q per
+intercetta e beta è una scelta convenzionale e non garantisce una scala
+statisticamente calibrata per componenti con unità diverse.
+
+### Confronto OOS sul run riproducibile
+
+Ricalcolando sulla cache locale con cutoff `2026-10-09` e split `2024-01-01`,
+la configurazione z-score statica selezionata In-Sample è `entry_z=2.0`,
+`window=90`. Con i parametri Kalman fissi indicati sopra:
+
+| Modello di hedge | PnL OOS (spread-price) | Ingressi | Win rate chiusi | Max drawdown |
+|---|---:|---:|---:|---:|
+| OLS statico | `-27.1274` | 1 | `0.00%` | `-56.2464` |
+| Kalman dinamico | `-17.3068` | 1 | `0.00%` | `-55.0071` |
+
+La colonna “trade” riporta il numero di ingressi nel periodo, non il numero di
+trade certamente ancora aperti alla data finale. Il win rate considera solo
+trade chiusi e vale zero anche se non ci sono state chiusure; l'eventuale
+posizione ancora aperta contribuisce comunque al PnL mark-to-market. Il
+drawdown è il minimo della curva cumulativa del PnL giornaliero, con high-water
+mark iniziale pari a zero. In questo singolo run il PnL dinamico è meno
+negativo di quello statico, ma entrambi sono negativi e il campione non
+stabilisce che l'hedge dinamico sia superiore. Il confronto riusa i parametri
+selezionati per OLS, mentre Q e R sono impostati a priori; non è dunque una
+comparazione di strategie entrambe ottimizzate né un test statistico di
+superiorità. Entrambi i risultati sono PnL spread non normalizzati e non
+includono costi, slippage, finanziamento, borrow o vincoli di esecuzione.
+
+Per ripetere il benchmark insieme alle fasi precedenti:
+
+```bash
+python main.py --as-of 2026-10-09 --start-date 2010-01-01
+```
+
+La pipeline registra nel log PnL OOS, numero di trade, win rate e max
+drawdown per entrambi gli hedge. La suite include test di dimensioni, valori
+finiti, allineamento, input non validi e causalità: filtrare un prefisso
+separatamente deve restituire gli stessi stati e innovazioni del prefisso
+corrispondente filtrato con l'intera serie.
+
 I test completi si eseguono con:
 
 ```bash
